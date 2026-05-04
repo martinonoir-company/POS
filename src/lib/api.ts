@@ -1,0 +1,259 @@
+import type { Product, StockLevel, SyncBatchResult, PosTransaction, QuoteResult } from "./types";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
+
+type TokenGetter = () => string | null;
+type RefreshFn = () => Promise<boolean>;
+
+let _getToken: TokenGetter = () => null;
+let _refresh: RefreshFn = async () => false;
+let _onUnauthorized: (() => void) | null = null;
+
+export function configureApi(
+  getToken: TokenGetter,
+  refresh: RefreshFn,
+  onUnauthorized: () => void
+) {
+  _getToken = getToken;
+  _refresh = refresh;
+  _onUnauthorized = onUnauthorized;
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  retry = true
+): Promise<T> {
+  const token = _getToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+  if (res.status === 401 && retry) {
+    const ok = await _refresh();
+    if (ok) return request<T>(path, options, false);
+    _onUnauthorized?.();
+    throw new Error("Session expired. Please log in again.");
+  }
+
+  if (!res.ok) {
+    let errBody: { message?: string | string[]; error?: string };
+    try { errBody = await res.json(); } catch { errBody = { message: res.statusText }; }
+    const msg = Array.isArray(errBody.message) ? errBody.message.join(", ") : errBody.message;
+    throw new Error(msg || `Request failed: ${res.status}`);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+// ── Products ──
+
+export interface ProductQueryParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  categoryId?: string;
+  sortBy?: string;
+  sortOrder?: "ASC" | "DESC";
+}
+
+export async function fetchProducts(params: ProductQueryParams = {}): Promise<{
+  data: { items: Product[]; total: number; page: number; limit: number; pages: number };
+}> {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("limit", String(params.limit ?? 24));
+  q.set("isActive", "true");
+  if (params.search?.trim()) q.set("search", params.search.trim());
+  if (params.categoryId) q.set("categoryId", params.categoryId);
+  if (params.sortBy) q.set("sortBy", params.sortBy);
+  if (params.sortOrder) q.set("sortOrder", params.sortOrder);
+  return request(`/products?${q.toString()}`);
+}
+
+// ── Stock ──
+
+export async function fetchAllStock(page = 1, limit = 200): Promise<{
+  data: { items: StockLevel[]; total: number };
+}> {
+  return request(`/pos/stock?page=${page}&limit=${limit}`);
+}
+
+export async function fetchVariantStock(variantId: string): Promise<{
+  data: StockLevel | null;
+}> {
+  return request(`/pos/stock/${variantId}`);
+}
+
+// ── POS Sync ──
+
+export async function syncTransactions(
+  terminalId: string,
+  transactions: PosTransaction[]
+): Promise<{ data: SyncBatchResult }> {
+  return request("/pos/sync", {
+    method: "POST",
+    body: JSON.stringify({ terminalId, transactions }),
+  });
+}
+
+// ── Price Quote (coupon validation) ──
+
+export async function getQuote(
+  items: { variantId: string; quantity: number; unitPrice: number }[],
+  couponCode?: string,
+  currency = "NGN"
+): Promise<{ data: QuoteResult }> {
+  return request("/orders/quote", {
+    method: "POST",
+    body: JSON.stringify({
+      items: items.map((i) => ({
+        variantId: i.variantId,
+        sku: "",
+        productName: "",
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+      })),
+      context: {
+        currency,
+        country: "NG",
+        state: "Lagos",
+        couponCode,
+      },
+    }),
+  });
+}
+
+// ── Orders (Sales History) ──
+
+export interface OrderQueryParams {
+  page?: number;
+  limit?: number;
+  status?: string;
+  channel?: string;
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  sortBy?: string;
+  sortOrder?: "ASC" | "DESC";
+}
+
+export interface OrderSummary {
+  id: string;
+  orderNumber: string;
+  status: string;
+  channel: string;
+  currency: string;
+  subtotal: number;
+  discountTotal: number;
+  grandTotal: number;
+  paymentMethod: string | null;
+  createdAt: string;
+  items: {
+    id: string;
+    productName: string;
+    variantName?: string;
+    sku: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+    discountAmount: number;
+    imageUrl?: string;
+    options?: Record<string, string>;
+  }[];
+  user?: { id: string; firstName: string; lastName: string; email: string } | null;
+  shippingAddress?: Record<string, string> | null;
+  couponCode?: string | null;
+  discountType?: string | null;
+  discountAppliedBy?: string | null;
+  discountAppliedByName?: string | null;
+  discountAppliedAt?: string | null;
+  customerNote?: string | null;
+  staffNote?: string | null;
+  paidAt?: string | null;
+  statusHistory?: { fromStatus: string; toStatus: string; createdAt: string; reason?: string }[];
+}
+
+export async function fetchOrders(params: OrderQueryParams = {}): Promise<{
+  data: { items: OrderSummary[]; total: number; page: number; limit: number; pages: number };
+}> {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("limit", String(params.limit ?? 15));
+  q.set("channel", params.channel ?? "POS");
+  if (params.status) q.set("status", params.status);
+  if (params.startDate) q.set("startDate", params.startDate);
+  if (params.endDate) q.set("endDate", params.endDate);
+  if (params.search?.trim()) q.set("search", params.search.trim());
+  if (params.sortBy) q.set("sortBy", params.sortBy);
+  if (params.sortOrder) q.set("sortOrder", params.sortOrder);
+  return request(`/orders?${q.toString()}`);
+}
+
+export async function fetchOrderById(id: string): Promise<{ data: OrderSummary }> {
+  return request(`/orders/${id}`);
+}
+
+// ── POS Pages API ──
+
+export async function fetchAnalytics(startDate?: string, endDate?: string, channel?: string): Promise<{ data: {
+  orderCount: number; totalRevenue: number; totalDiscount: number; avgOrderValue: number;
+  paymentBreakdown: { method: string; count: number; total: number }[];
+  topProducts: { productName: string; sku: string; totalQty: number; totalRevenue: number }[];
+  dailyRevenue: { date: string; orders: number; revenue: number }[];
+} }> {
+  const q = new URLSearchParams();
+  if (startDate) q.set("startDate", startDate);
+  if (endDate) q.set("endDate", endDate);
+  if (channel) q.set("channel", channel);
+  return request(`/pos/pages/analytics/summary?${q.toString()}`);
+}
+
+export async function fetchCoupons(page = 1, limit = 15, status?: string): Promise<{ data: {
+  items: { id: string; code: string; description?: string; discountType: string; discountValue: number; currency?: string; minimumOrderAmount: number; maximumDiscount: number; usageLimit: number; usageLimitPerCustomer: number; timesUsed: number; status: string; startsAt?: string; expiresAt?: string; createdAt: string }[];
+  total: number; page: number; limit: number; pages: number;
+} }> {
+  const q = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (status) q.set("status", status);
+  return request(`/pos/pages/coupons?${q.toString()}`);
+}
+
+export async function fetchCustomers(page = 1, limit = 15, search?: string): Promise<{ data: {
+  items: { id: string; userId: string; totalOrders: number; totalSpentNgn: number; totalSpentUsd: number; avgOrderValueNgn: number; lastOrderAt?: string; tags: string[]; notes?: string; createdAt: string; user?: { id: string; email: string; firstName: string; lastName: string } }[];
+  total: number; page: number; limit: number; pages: number;
+} }> {
+  const q = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search?.trim()) q.set("search", search.trim());
+  return request(`/pos/pages/customers?${q.toString()}`);
+}
+
+export async function fetchCustomerById(id: string): Promise<{ data: {
+  id: string; userId: string; totalOrders: number; totalSpentNgn: number; tags: string[]; notes?: string; createdAt: string;
+  user?: { id: string; email: string; firstName: string; lastName: string };
+  addresses?: { id: string; label?: string; line1: string; city: string; state: string; country: string; isDefault: boolean }[];
+  recentOrders?: OrderSummary[];
+} }> {
+  return request(`/pos/pages/customers/${id}`);
+}
+
+export async function fetchInventoryLevels(page = 1, limit = 20, search?: string, lowStockOnly?: boolean): Promise<{ data: {
+  items: { variantId: string; warehouseCode: string; onHand: number; reserved: number; available: number; lastMovementAt: string; sku: string; variantName: string; barcode: string; productName: string; productId: string }[];
+  total: number; page: number; limit: number; pages: number;
+} }> {
+  const q = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search?.trim()) q.set("search", search.trim());
+  if (lowStockOnly) q.set("lowStockOnly", "true");
+  return request(`/pos/pages/inventory?${q.toString()}`);
+}
+
+export async function fetchMovements(variantId: string, page = 1, limit = 20): Promise<{ data: {
+  items: { id: string; variantId: string; kind: string; quantity: number; warehouseCode: string; referenceId?: string; referenceType?: string; reason?: string; createdBy?: string; createdAt: string }[];
+  total: number; page: number; limit: number; pages: number;
+} }> {
+  return request(`/pos/pages/inventory/${variantId}/movements?page=${page}&limit=${limit}`);
+}
