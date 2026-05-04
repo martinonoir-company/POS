@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useState } from "react";
 
 interface Props {
@@ -28,11 +29,16 @@ export default function LoginForm({ onLogin }: Props) {
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Brand */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-black text-white tracking-tight mb-1">
-            MARTINO NOIR
-          </h1>
-          <p className="text-amber-400 font-medium text-sm tracking-widest uppercase">
+        <div className="flex flex-col items-center mb-10">
+          <Image
+            src="/martino%20logo.png"
+            alt="Martino Noir"
+            width={220}
+            height={140}
+            priority
+            className="h-auto w-[220px] invert"
+          />
+          <p className="text-amber-400 font-medium text-sm tracking-[0.3em] uppercase mt-3">
             Point of Sale
           </p>
         </div>
