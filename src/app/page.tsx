@@ -5,6 +5,7 @@ import { configureApi } from "../lib/api";
 import { useCart } from "../lib/use-cart";
 import { useSales } from "../lib/use-sales";
 import { useOnline } from "../lib/use-online";
+import { usePosSession } from "../lib/use-pos-session";
 import {
   queueTransaction,
   getPendingCount,
@@ -31,18 +32,30 @@ import PaymentsPage from "../components/payments-page";
 import CustomersPage from "../components/customers-page";
 import ProductsPage from "../components/products-page";
 import InventoryPage from "../components/inventory-page";
+import ScannerBasketPanel from "../components/scanner-basket-panel";
 
 export default function POSPage() {
   const auth = useAuth();
   const cart = useCart();
   const sales = useSales();
   const online = useOnline();
+  // Live scanner-built basket on this terminal (PR #13). Enabled once
+  // authenticated; inert when there's no open session.
+  const posSession = usePosSession(
+    getTerminalId(),
+    auth.getToken,
+    auth.isAuthenticated,
+  );
 
   const [activeTab, setActiveTab] = useState<TabId>("pos");
   const [showTender, setShowTender] = useState(false);
+  /** "local" = walk-up cart rung at the till; "session" = scanner basket. */
+  const [tenderSource, setTenderSource] = useState<"local" | "session">("local");
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  /** Order number from the last completed scanner session, for a toast. */
+  const [sessionSaleNote, setSessionSaleNote] = useState<string | null>(null);
 
   // Configure API with auth tokens
   useEffect(() => {
@@ -82,12 +95,66 @@ export default function POSPage() {
 
   // ── Checkout Flow ──
 
+  /** Walk-up sale rung directly at the till (local cart). */
   function handleCheckout() {
     if (cart.items.length === 0) return;
+    setTenderSource("local");
     setShowTender(true);
   }
 
+  /** Complete a scanner-built basket (the floor staff handed it over). */
+  function handleCompleteSessionSale() {
+    if (
+      !posSession.session ||
+      posSession.session.status !== "AWAITING_PAYMENT" ||
+      posSession.session.cart.items.length === 0
+    ) {
+      return;
+    }
+    setTenderSource("session");
+    setShowTender(true);
+  }
+
+  /** Cancel a scanner-built basket. */
+  async function handleVoidSession() {
+    if (!posSession.session) return;
+    const ok = window.confirm(
+      "Cancel this scanner basket? The floor staff will need to re-scan if it was a mistake.",
+    );
+    if (!ok) return;
+    await posSession.voidSession("Voided at the till");
+  }
+
+  /** Dismiss the scanner-basket panel after it completed / was voided. */
+  function handleDismissSessionPanel() {
+    // The hook re-fetches on the next WS event / reconnect; clearing the
+    // local note + relying on a subsequent /pos-sessions GET (which 404s
+    // once the session is closed) lets the panel disappear. We trigger a
+    // refetch so a brand-new session opened by the scanner shows up.
+    setSessionSaleNote(null);
+    void posSession.refetch();
+  }
+
+  /** Payment confirmed from the tender modal — route by source. */
   async function handlePaymentConfirm(payments: PaymentSplit[]) {
+    if (tenderSource === "session") {
+      const res = await posSession.confirm(payments, {
+        name: cart.customerName || undefined,
+        phone: cart.customerPhone || undefined,
+      });
+      setShowTender(false);
+      if (res.ok) {
+        setSessionSaleNote(
+          res.orderNumber ? `Order #${res.orderNumber} completed.` : "Sale completed.",
+        );
+        updatePendingCount();
+      }
+      // On failure the error is shown in the ScannerBasketPanel; the
+      // tender modal closes and the cashier can retry from the panel.
+      return;
+    }
+
+    // ── Local walk-up sale (unchanged) ──
     const txId = crypto.randomUUID();
     const timestamp = new Date().toISOString();
 
@@ -199,53 +266,82 @@ export default function POSPage() {
               <ProductGrid onAddToCart={cart.addItem} />
             </div>
 
-            {/* Right: Cart Panel */}
-            <div className="w-96 border-l border-zinc-800 p-4 flex flex-col bg-zinc-900/50">
-              {/* Customer info */}
-              <div className="flex gap-2 mb-3">
-                <input
-                  type="text"
-                  value={cart.customerName}
-                  onChange={(e) => cart.setCustomerName(e.target.value)}
-                  placeholder="Customer name"
-                  className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-xs placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-                <input
-                  type="tel"
-                  value={cart.customerPhone}
-                  onChange={(e) => cart.setCustomerPhone(e.target.value)}
-                  placeholder="Phone"
-                  className="w-28 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-xs placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-
-              {/* Cart items + totals */}
-              <div className="flex-1 overflow-hidden flex flex-col">
-                <CartPanel
-                  items={cart.items}
-                  subtotal={cart.subtotal}
-                  discountAmount={cart.discountAmount}
-                  grandTotal={cart.grandTotal}
-                  onUpdateQuantity={cart.updateQuantity}
-                  onRemoveItem={cart.removeItem}
-                  onClearCart={cart.clearCart}
-                  onCheckout={handleCheckout}
-                  itemCount={cart.itemCount}
-                />
-              </div>
-
-              {/* Discount row */}
-              {cart.items.length > 0 && (
-                <DiscountRow
-                  items={cart.items}
-                  couponCode={cart.couponCode}
-                  discountAmount={cart.discountAmount}
-                  discountType={cart.discountType}
-                  onApplyCoupon={cart.applyCoupon}
-                  onApplyManualDiscount={cart.applyManualDiscount}
-                  onClearDiscount={cart.clearDiscount}
+            {/* Right: Scanner basket (when present) + local cart */}
+            <div className="w-96 border-l border-zinc-800 p-4 flex flex-col gap-3 bg-zinc-900/50 overflow-y-auto">
+              {/* Scanner-built basket — appears only when a session exists */}
+              {posSession.session && (
+                <ScannerBasketPanel
+                  session={posSession.session}
+                  connected={posSession.connected}
+                  busy={posSession.busy}
+                  error={posSession.error}
+                  onCompleteSale={handleCompleteSessionSale}
+                  onVoid={handleVoidSession}
+                  onDismiss={handleDismissSessionPanel}
                 />
               )}
+
+              {/* Toast: a scanner sale just completed */}
+              {sessionSaleNote && (
+                <div className="rounded-lg bg-emerald-950/30 border border-emerald-900/40 px-3 py-2 flex items-center justify-between">
+                  <span className="text-xs text-emerald-300">{sessionSaleNote}</span>
+                  <button
+                    onClick={() => setSessionSaleNote(null)}
+                    className="text-emerald-500 hover:text-emerald-300 text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Local walk-up cart */}
+              <div className="flex-1 flex flex-col min-h-0">
+                {/* Customer info */}
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={cart.customerName}
+                    onChange={(e) => cart.setCustomerName(e.target.value)}
+                    placeholder="Customer name"
+                    className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-xs placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                  <input
+                    type="tel"
+                    value={cart.customerPhone}
+                    onChange={(e) => cart.setCustomerPhone(e.target.value)}
+                    placeholder="Phone"
+                    className="w-28 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-xs placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                {/* Cart items + totals */}
+                <div className="flex-1 overflow-hidden flex flex-col">
+                  <CartPanel
+                    items={cart.items}
+                    subtotal={cart.subtotal}
+                    discountAmount={cart.discountAmount}
+                    grandTotal={cart.grandTotal}
+                    onUpdateQuantity={cart.updateQuantity}
+                    onRemoveItem={cart.removeItem}
+                    onClearCart={cart.clearCart}
+                    onCheckout={handleCheckout}
+                    itemCount={cart.itemCount}
+                  />
+                </div>
+
+                {/* Discount row */}
+                {cart.items.length > 0 && (
+                  <DiscountRow
+                    items={cart.items}
+                    couponCode={cart.couponCode}
+                    discountAmount={cart.discountAmount}
+                    discountType={cart.discountType}
+                    onApplyCoupon={cart.applyCoupon}
+                    onApplyManualDiscount={cart.applyManualDiscount}
+                    onClearDiscount={cart.clearDiscount}
+                  />
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -308,7 +404,13 @@ export default function POSPage() {
       {/* Modals */}
       {showTender && (
         <TenderModal
-          grandTotal={cart.grandTotal}
+          grandTotal={
+            tenderSource === "session"
+              ? // Session totals are MINOR units (kobo); the tender modal
+                // and the local cart work in MAJOR units. Convert.
+                (posSession.session?.cart.totals.grandTotal ?? 0) / 100
+              : cart.grandTotal
+          }
           onConfirm={handlePaymentConfirm}
           onCancel={() => setShowTender(false)}
         />

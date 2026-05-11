@@ -1,4 +1,5 @@
-import type { Product, StockLevel, SyncBatchResult, PosTransaction, QuoteResult } from "./types";
+import type { Product, StockLevel, SyncBatchResult, PosTransaction, QuoteResult, PaymentSplit } from "./types";
+import type { PosSession } from "./pos-session-events";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api/v1";
 
@@ -99,6 +100,63 @@ export async function syncTransactions(
   return request("/pos/sync", {
     method: "POST",
     body: JSON.stringify({ terminalId, transactions }),
+  });
+}
+
+// ── POS Sessions (scanner-built baskets) ──
+//
+// The scanner builds the basket and flips it to AWAITING_PAYMENT. The POS
+// web app subscribes to the terminal room, renders the live cart, and —
+// when the cashier takes payment — calls `confirm` with the split. The
+// confirm endpoint reuses the existing POS sync pipeline server-side
+// (order created PAID, inventory SALE movements, audit trail), so the
+// downstream effects are identical to a locally-rung sale.
+
+/** Fetch the current open session for a terminal. Resolves to null on 404. */
+export async function fetchPosSession(terminalCode: string): Promise<PosSession | null> {
+  try {
+    const res = await request<{ data: PosSession }>(
+      `/pos-sessions/${encodeURIComponent(terminalCode)}`,
+    );
+    return res.data;
+  } catch (err) {
+    // 404 → no open session. Anything else re-throws.
+    if (err instanceof Error && /not found|no open session/i.test(err.message)) {
+      return null;
+    }
+    // The request() helper throws Error without a status code; treat a
+    // "not found"-shaped message as null, otherwise surface it.
+    if (err instanceof Error && err.message.toLowerCase().includes("session")) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/** Complete the sale: take payment for a scanner-built basket. */
+export async function confirmPosSession(
+  terminalCode: string,
+  body: {
+    version: number;
+    payments: PaymentSplit[];
+    customerName?: string;
+    customerPhone?: string;
+  },
+): Promise<{ data: PosSession }> {
+  return request(`/pos-sessions/${encodeURIComponent(terminalCode)}/confirm`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Void the session (cashier rejects the basket). */
+export async function voidPosSession(
+  terminalCode: string,
+  body: { version: number; reason?: string },
+): Promise<{ data: PosSession }> {
+  return request(`/pos-sessions/${encodeURIComponent(terminalCode)}/void`, {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 
