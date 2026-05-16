@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../lib/auth-context";
 import { configureApi } from "../lib/api";
 import { useCart } from "../lib/use-cart";
@@ -51,6 +51,12 @@ export default function POSPage() {
   const [showTender, setShowTender] = useState(false);
   /** "local" = walk-up cart rung at the till; "session" = scanner basket. */
   const [tenderSource, setTenderSource] = useState<"local" | "session">("local");
+  // True while a sale is being submitted — drives the tender modal's
+  // disabled "Processing…" state. The ref is a synchronous guard: state
+  // updates are async, so a fast double-click could slip past `confirming`
+  // before React re-renders; the ref blocks the second call immediately.
+  const [confirming, setConfirming] = useState(false);
+  const confirmingRef = useRef(false);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -137,6 +143,22 @@ export default function POSPage() {
 
   /** Payment confirmed from the tender modal — route by source. */
   async function handlePaymentConfirm(payments: PaymentSplit[]) {
+    // Re-entry guard: a double-click (or any second invocation while the
+    // first is still in flight) is dropped. Without this, the walk-up path
+    // below mints a fresh transactionId per call, so each click produced a
+    // separate order — the "three orders for one sale" bug.
+    if (confirmingRef.current) return;
+    confirmingRef.current = true;
+    setConfirming(true);
+    try {
+      await runPaymentConfirm(payments);
+    } finally {
+      confirmingRef.current = false;
+      setConfirming(false);
+    }
+  }
+
+  async function runPaymentConfirm(payments: PaymentSplit[]) {
     if (tenderSource === "session") {
       const res = await posSession.confirm(payments, {
         name: cart.customerName || undefined,
@@ -413,6 +435,7 @@ export default function POSPage() {
           }
           onConfirm={handlePaymentConfirm}
           onCancel={() => setShowTender(false)}
+          confirming={confirming}
         />
       )}
 

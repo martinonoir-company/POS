@@ -6,6 +6,8 @@ interface Props {
   grandTotal: number;
   onConfirm: (payments: PaymentSplit[]) => void;
   onCancel: () => void;
+  /** True while the sale is being submitted — disables Complete Sale. */
+  confirming?: boolean;
 }
 
 type Method = "CASH" | "POS_TERMINAL" | "BANK_TRANSFER";
@@ -16,7 +18,7 @@ const METHOD_LABELS: Record<Method, string> = {
   BANK_TRANSFER: "🏦 Bank Transfer",
 };
 
-export default function TenderModal({ grandTotal, onConfirm, onCancel }: Props) {
+export default function TenderModal({ grandTotal, onConfirm, onCancel, confirming = false }: Props) {
   const [payments, setPayments] = useState<PaymentSplit[]>([]);
   const [activeMethod, setActiveMethod] = useState<Method | null>(null);
   const [amountInput, setAmountInput] = useState("");
@@ -190,11 +192,20 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel }: Props) 
         {/* Confirm Button */}
         <div className="p-6 pt-0">
           <button
-            onClick={() => onConfirm(payments)}
-            disabled={!canConfirm}
+            onClick={() => {
+              // Guard against a double-click landing before `confirming`
+              // propagates back as a prop on the next render.
+              if (confirming || !canConfirm) return;
+              onConfirm(payments);
+            }}
+            disabled={!canConfirm || confirming}
             className="w-full py-4 rounded-xl font-bold text-lg transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 text-white"
           >
-            {canConfirm ? "✓ Complete Sale" : `₦${remaining.toLocaleString()} remaining`}
+            {confirming
+              ? "Processing…"
+              : canConfirm
+                ? "✓ Complete Sale"
+                : `₦${remaining.toLocaleString()} remaining`}
           </button>
         </div>
       </div>
