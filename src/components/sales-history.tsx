@@ -42,8 +42,12 @@ function formatDate(iso: string): string {
   });
 }
 
-function formatMoney(amount: number): string {
-  return `₦${Number(amount).toLocaleString()}`;
+function formatMoney(minor: number): string {
+  // Order amounts are stored in minor units (kobo) — divide for display.
+  return `₦${(Number(minor) / 100).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function getTodayISO(): string {

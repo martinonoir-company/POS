@@ -1,5 +1,6 @@
 "use client";
 import type { CartItem } from "../lib/types";
+import { formatNaira } from "../lib/money";
 
 interface Props {
   items: CartItem[];
@@ -101,7 +102,7 @@ export default function CartPanel({
               </div>
               {/* Line total */}
               <p className="text-amber-400 font-bold text-sm">
-                ₦{(item.unitPrice * item.quantity).toLocaleString()}
+                {formatNaira(item.unitPrice * item.quantity)}
               </p>
             </div>
           </div>
@@ -112,19 +113,19 @@ export default function CartPanel({
       <div className="border-t border-zinc-700 pt-3 space-y-2">
         <div className="flex justify-between text-sm">
           <span className="text-zinc-400">Subtotal</span>
-          <span className="text-white font-medium">₦{subtotal.toLocaleString()}</span>
+          <span className="text-white font-medium">{formatNaira(subtotal)}</span>
         </div>
         {discountAmount > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-emerald-400">Discount</span>
             <span className="text-emerald-400 font-medium">
-              −₦{discountAmount.toLocaleString()}
+              −{formatNaira(discountAmount)}
             </span>
           </div>
         )}
         <div className="flex justify-between text-xl font-bold pt-1">
           <span className="text-white">Total</span>
-          <span className="text-amber-400">₦{grandTotal.toLocaleString()}</span>
+          <span className="text-amber-400">{formatNaira(grandTotal)}</span>
         </div>
       </div>
 
@@ -133,7 +134,7 @@ export default function CartPanel({
         onClick={onCheckout}
         className="mt-4 w-full py-4 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black font-bold text-lg rounded-xl transition-all duration-150 active:scale-[0.98]"
       >
-        Charge ₦{grandTotal.toLocaleString()}
+        Charge {formatNaira(grandTotal)}
       </button>
     </div>
   );

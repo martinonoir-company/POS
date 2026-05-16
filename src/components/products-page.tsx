@@ -4,7 +4,8 @@ import { fetchProducts } from "../lib/api";
 import type { Product } from "../lib/types";
 import Image from "next/image";
 
-function fmt(n: number): string { return `₦${Number(n).toLocaleString()}`; }
+// Variant prices are stored in minor units (kobo) — divide for display.
+function fmt(minor: number): string { return `₦${(Number(minor) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
 function Pagination({ page, pages, onChange }: { page: number; pages: number; onChange: (p: number) => void }) {
   if (pages <= 1) return null;

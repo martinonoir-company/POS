@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
 import type { PaymentSplit } from "../lib/types";
+import { formatNaira, majorToMinor, minorToMajor } from "../lib/money";
 
 interface Props {
   grandTotal: number;
@@ -30,8 +31,10 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
 
   const addPayment = useCallback(() => {
     if (!activeMethod) return;
-    const amount = parseFloat(amountInput);
-    if (isNaN(amount) || amount <= 0) return;
+    const major = parseFloat(amountInput);
+    if (isNaN(major) || major <= 0) return;
+    // The cashier types a naira amount; splits are kept in minor units.
+    const amount = majorToMinor(major);
 
     setPayments((prev) => {
       const existing = prev.find((p) => p.method === activeMethod);
@@ -85,7 +88,7 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
             </button>
           </div>
           <div className="text-3xl font-bold text-amber-400">
-            ₦{grandTotal.toLocaleString()}
+            {formatNaira(grandTotal)}
           </div>
         </div>
 
@@ -94,7 +97,7 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
           {remaining > 0 && (
             <>
               <p className="text-zinc-400 text-sm">
-                {payments.length === 0 ? "Select payment method" : `Remaining: ₦${remaining.toLocaleString()}`}
+                {payments.length === 0 ? "Select payment method" : `Remaining: ${formatNaira(remaining)}`}
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {(Object.keys(METHOD_LABELS) as Method[]).map((method) => (
@@ -130,7 +133,7 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
                       value={amountInput}
                       onChange={(e) => setAmountInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && addPayment()}
-                      placeholder={remaining.toString()}
+                      placeholder={String(minorToMajor(remaining))}
                       className="w-full pl-7 pr-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
@@ -166,7 +169,7 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
                   <span className="text-white text-sm">{METHOD_LABELS[p.method]}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-emerald-400 font-bold">
-                      ₦{p.amount.toLocaleString()}
+                      {formatNaira(p.amount)}
                     </span>
                     <button
                       onClick={() => removePayment(p.method)}
@@ -181,7 +184,7 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
                 <div className="flex justify-between text-sm bg-emerald-900/30 rounded-lg px-4 py-2 border border-emerald-800/50">
                   <span className="text-emerald-400">Change</span>
                   <span className="text-emerald-300 font-bold">
-                    ₦{overpaid.toLocaleString()}
+                    {formatNaira(overpaid)}
                   </span>
                 </div>
               )}
@@ -205,7 +208,7 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
               ? "Processing…"
               : canConfirm
                 ? "✓ Complete Sale"
-                : `₦${remaining.toLocaleString()} remaining`}
+                : `${formatNaira(remaining)} remaining`}
           </button>
         </div>
       </div>

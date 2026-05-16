@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import type { Product, ProductVariant, StockLevel, CartItem } from "../lib/types";
 import { fetchProducts, fetchAllStock } from "../lib/api";
+import { formatNaira } from "../lib/money";
 
 interface Props {
   onAddToCart: (item: CartItem) => void;
@@ -210,7 +211,7 @@ export default function ProductGrid({ onAddToCart }: Props) {
                       <p className="text-zinc-400 text-xs truncate mt-0.5">{variant.name}</p>
                     )}
                     <p className="text-amber-400 font-bold text-sm mt-1">
-                      ₦{price.toLocaleString()}
+                      {formatNaira(price)}
                     </p>
                     <p className="text-zinc-500 text-xs mt-0.5">{variant.sku}</p>
                   </div>

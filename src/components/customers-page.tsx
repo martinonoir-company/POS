@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchCustomers, fetchCustomerById } from "../lib/api";
 
-function fmt(n: number): string { return `₦${Number(n).toLocaleString()}`; }
+// Money is stored in minor units (kobo) — divide for display.
+function fmt(minor: number): string { return `₦${(Number(minor) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function fmtDate(iso?: string): string { return iso ? new Date(iso).toLocaleDateString("en-NG", { year:"numeric", month:"short", day:"numeric" }) : "—"; }
 
 type CustomerItem = { id: string; userId: string; totalOrders: number; totalSpentNgn: number; totalSpentUsd: number; avgOrderValueNgn: number; lastOrderAt?: string; tags: string[]; notes?: string; createdAt: string; user?: { id: string; email: string; firstName: string; lastName: string } };

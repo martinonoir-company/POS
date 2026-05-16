@@ -1,5 +1,7 @@
 "use client";
 
+import { formatNaira } from "../lib/money";
+
 interface Props {
   todaySalesCount: number;
   todayRevenue: number;
@@ -48,19 +50,19 @@ export default function EodReport({
         <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5">
           <p className="text-zinc-500 text-xs uppercase font-medium">Gross Revenue</p>
           <p className="text-3xl font-bold text-amber-400 mt-1">
-            ₦{todayRevenue.toLocaleString()}
+            {formatNaira(todayRevenue)}
           </p>
         </div>
         <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5">
           <p className="text-zinc-500 text-xs uppercase font-medium">Discounts Given</p>
           <p className="text-3xl font-bold text-emerald-400 mt-1">
-            ₦{todayDiscounts.toLocaleString()}
+            {formatNaira(todayDiscounts)}
           </p>
         </div>
         <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5">
           <p className="text-zinc-500 text-xs uppercase font-medium">Net Revenue</p>
           <p className="text-3xl font-bold text-white mt-1">
-            ₦{netRevenue.toLocaleString()}
+            {formatNaira(netRevenue)}
           </p>
         </div>
       </div>
@@ -74,7 +76,7 @@ export default function EodReport({
         <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5">
           <p className="text-zinc-500 text-xs uppercase font-medium">Avg Transaction</p>
           <p className="text-2xl font-bold text-white mt-1">
-            ₦{Math.round(avgTransaction).toLocaleString()}
+            {formatNaira(Math.round(avgTransaction))}
           </p>
         </div>
       </div>
@@ -97,7 +99,7 @@ export default function EodReport({
                       {METHOD_LABELS[method] || method}
                     </span>
                     <span className="text-white font-bold">
-                      ₦{amount.toLocaleString()}
+                      {formatNaira(amount)}
                     </span>
                   </div>
                   <div className="w-full bg-zinc-700 rounded-full h-2">

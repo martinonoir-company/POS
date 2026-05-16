@@ -427,10 +427,10 @@ export default function POSPage() {
       {showTender && (
         <TenderModal
           grandTotal={
+            // Both the session cart totals and the local cart are in MINOR
+            // units (kobo) — the tender modal works in minor units too.
             tenderSource === "session"
-              ? // Session totals are MINOR units (kobo); the tender modal
-                // and the local cart work in MAJOR units. Convert.
-                (posSession.session?.cart.totals.grandTotal ?? 0) / 100
+              ? posSession.session?.cart.totals.grandTotal ?? 0
               : cart.grandTotal
           }
           onConfirm={handlePaymentConfirm}

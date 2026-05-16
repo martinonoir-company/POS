@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchCoupons } from "../lib/api";
 
-function fmt(n: number): string { return `₦${Number(n).toLocaleString()}`; }
+// Money is stored in minor units (kobo) — divide for display.
+function fmt(minor: number): string { return `₦${(Number(minor) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function fmtDate(iso?: string): string { return iso ? new Date(iso).toLocaleDateString("en-NG", { year: "numeric", month: "short", day: "numeric" }) : "—"; }
 
 type Coupon = { id: string; code: string; description?: string; discountType: string; discountValue: number; currency?: string; minimumOrderAmount: number; maximumDiscount: number; usageLimit: number; timesUsed: number; status: string; startsAt?: string; expiresAt?: string; createdAt: string };

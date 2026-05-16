@@ -1,5 +1,6 @@
 "use client";
 import type { CompletedSale } from "../lib/types";
+import { formatNaira } from "../lib/money";
 
 interface Props {
   sale: CompletedSale;
@@ -100,9 +101,9 @@ export default function InvoicePrint({ sale, onClose }: Props) {
                   <p className="text-xs text-gray-400">SKU: {item.sku}</p>
                 </td>
                 <td className="py-3 text-center text-sm">{item.quantity}</td>
-                <td className="py-3 text-right text-sm">₦{item.unitPrice.toLocaleString()}</td>
+                <td className="py-3 text-right text-sm">{formatNaira(item.unitPrice)}</td>
                 <td className="py-3 text-right text-sm font-medium">
-                  ₦{(item.unitPrice * item.quantity).toLocaleString()}
+                  {formatNaira(item.unitPrice * item.quantity)}
                 </td>
               </tr>
             ))}
@@ -114,17 +115,17 @@ export default function InvoicePrint({ sale, onClose }: Props) {
           <div className="w-64 space-y-1">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
-              <span>₦{sale.subtotal.toLocaleString()}</span>
+              <span>{formatNaira(sale.subtotal)}</span>
             </div>
             {sale.discountTotal > 0 && (
               <div className="flex justify-between text-sm text-green-700">
                 <span>Discount {sale.couponCode && `(${sale.couponCode})`}</span>
-                <span>−₦{sale.discountTotal.toLocaleString()}</span>
+                <span>−{formatNaira(sale.discountTotal)}</span>
               </div>
             )}
             <div className="flex justify-between text-lg font-bold border-t-2 border-black pt-2 mt-2">
               <span>Total</span>
-              <span>₦{sale.grandTotal.toLocaleString()}</span>
+              <span>{formatNaira(sale.grandTotal)}</span>
             </div>
           </div>
         </div>
@@ -136,13 +137,13 @@ export default function InvoicePrint({ sale, onClose }: Props) {
             {sale.payments.map((p, i) => (
               <div key={i} className="flex justify-between text-sm">
                 <span className="text-gray-600">{METHOD_LABELS[p.method] || p.method}</span>
-                <span>₦{p.amount.toLocaleString()}</span>
+                <span>{formatNaira(p.amount)}</span>
               </div>
             ))}
             {change > 0 && (
               <div className="flex justify-between text-sm text-green-700 font-medium">
                 <span>Change</span>
-                <span>₦{change.toLocaleString()}</span>
+                <span>{formatNaira(change)}</span>
               </div>
             )}
           </div>

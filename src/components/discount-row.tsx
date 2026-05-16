@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { getQuote } from "../lib/api";
 import type { CartItem } from "../lib/types";
+import { formatNaira, majorToMinor } from "../lib/money";
 
 interface Props {
   items: CartItem[];
@@ -39,11 +40,11 @@ export default function DiscountRow({
         couponInput.trim()
       );
       if (res.data.coupon) {
+        // The server computes coupon.discountAmount in MINOR units — pass
+        // it straight through; POS keeps discounts in minor units.
         onApplyCoupon(couponInput.trim(), res.data.coupon.discountAmount);
         setCouponStatus("valid");
-        setCouponMessage(
-          `${res.data.coupon.discountType === "PERCENTAGE" ? `${res.data.coupon.discountAmount}%` : `₦${res.data.coupon.discountAmount.toLocaleString()}`} off`
-        );
+        setCouponMessage(`${formatNaira(res.data.coupon.discountAmount)} off`);
         setManualInput("");
       } else {
         setCouponStatus("invalid");
@@ -66,7 +67,8 @@ export default function DiscountRow({
   function handleApplyManual() {
     const val = parseFloat(manualInput);
     if (isNaN(val) || val <= 0) return;
-    onApplyManualDiscount(val);
+    // The cashier types a naira amount; the discount is stored in minor units.
+    onApplyManualDiscount(majorToMinor(val));
     setCouponInput("");
     setCouponStatus("idle");
     setCouponMessage("");
@@ -81,7 +83,7 @@ export default function DiscountRow({
             <span className={isCouponActive ? "text-emerald-400 font-medium" : "text-amber-400 font-medium"}>
               {isCouponActive ? `🏷️ Coupon: ${couponCode}` : "💰 Manual Discount"}
             </span>
-            <span className="text-white font-bold ml-2">−₦{discountAmount.toLocaleString()}</span>
+            <span className="text-white font-bold ml-2">−{formatNaira(discountAmount)}</span>
           </div>
           <button onClick={handleRemoveDiscount} className="text-red-400 hover:text-red-300 text-xs font-medium transition-colors">✕ Remove</button>
         </div>

@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchAnalytics } from "../lib/api";
 
-function fmt(n: number): string { return `₦${Number(n).toLocaleString()}`; }
+// Money is stored in minor units (kobo) — divide for display.
+function fmt(minor: number): string { return `₦${(Number(minor) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function getTodayISO(): string { return new Date().toISOString().split("T")[0]; }
 function getWeekAgoISO(): string { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; }
 function getMonthStartISO(): string { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`; }
