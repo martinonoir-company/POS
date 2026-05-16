@@ -317,3 +317,43 @@ export async function fetchMovements(variantId: string, page = 1, limit = 20): P
 } }> {
   return request(`/pos/pages/inventory/${variantId}/movements?page=${page}&limit=${limit}`);
 }
+
+// ── Payments (real payment records, not orders) ──
+
+export interface PaymentRecord {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  provider: "PAYSTACK" | "MONIEPOINT" | "CASH";
+  channel: "STOREFRONT" | "MOBILE" | "POS";
+  method: "CARD" | "CASH" | "POS_TRANSFER" | "BANK_TRANSFER";
+  status: "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "REFUNDED";
+  amount: number;
+  currency: string;
+  merchantReference: string;
+  providerReference?: string | null;
+  terminalSerial?: string | null;
+  gatewayResponse?: string | null;
+  failureReason?: string | null;
+  paidAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Payment records for the POS Payments tab. Queries the real `payments`
+ * table, scoped to the POS channel.
+ */
+export async function fetchPayments(
+  page = 1,
+  limit = 15,
+  opts: { status?: string; search?: string } = {},
+): Promise<{ data: {
+  items: PaymentRecord[];
+  total: number; page: number; limit: number; pages: number;
+} }> {
+  const q = new URLSearchParams({ page: String(page), limit: String(limit), channel: "POS" });
+  if (opts.status) q.set("status", opts.status);
+  if (opts.search?.trim()) q.set("search", opts.search.trim());
+  return request(`/payments?${q.toString()}`);
+}
