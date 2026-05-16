@@ -182,6 +182,8 @@ export async function getQuote(
         country: "NG",
         state: "Lagos",
         couponCode,
+        // Lets the server reject coupons not scoped to the POS channel.
+        channel: "POS",
       },
     }),
   });
