@@ -3,12 +3,20 @@ import { useState, useCallback } from "react";
 import type { PaymentSplit } from "../lib/types";
 import { formatNaira, majorToMinor, minorToMajor } from "../lib/money";
 
+/** Live status of a card payment on the Moniepoint terminal. */
+export type TerminalStatus =
+  | null
+  | { phase: "waiting"; message: string }
+  | { phase: "failed"; message: string };
+
 interface Props {
   grandTotal: number;
   onConfirm: (payments: PaymentSplit[]) => void;
   onCancel: () => void;
   /** True while the sale is being submitted — disables Complete Sale. */
   confirming?: boolean;
+  /** Card-terminal payment status, when a card leg is being charged. */
+  terminalStatus?: TerminalStatus;
 }
 
 type Method = "CASH" | "POS_TERMINAL" | "BANK_TRANSFER";
@@ -19,7 +27,13 @@ const METHOD_LABELS: Record<Method, string> = {
   BANK_TRANSFER: "🏦 Bank Transfer",
 };
 
-export default function TenderModal({ grandTotal, onConfirm, onCancel, confirming = false }: Props) {
+export default function TenderModal({
+  grandTotal,
+  onConfirm,
+  onCancel,
+  confirming = false,
+  terminalStatus = null,
+}: Props) {
   const [payments, setPayments] = useState<PaymentSplit[]>([]);
   const [activeMethod, setActiveMethod] = useState<Method | null>(null);
   const [amountInput, setAmountInput] = useState("");
@@ -28,6 +42,9 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
   const remaining = Math.max(0, grandTotal - totalPaid);
   const overpaid = totalPaid > grandTotal ? totalPaid - grandTotal : 0;
   const canConfirm = totalPaid >= grandTotal;
+  // The card terminal is actively charging — lock the modal until it
+  // settles so the cashier cannot dismiss or re-submit mid-transaction.
+  const terminalWaiting = terminalStatus?.phase === "waiting";
 
   const addPayment = useCallback(() => {
     if (!activeMethod) return;
@@ -82,7 +99,13 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
             <h2 className="text-xl font-bold text-white">Payment</h2>
             <button
               onClick={onCancel}
-              className="text-zinc-500 hover:text-white text-2xl"
+              disabled={terminalWaiting || confirming}
+              title={
+                terminalWaiting
+                  ? "Wait for the card terminal to finish"
+                  : "Close"
+              }
+              className="text-zinc-500 hover:text-white text-2xl disabled:opacity-30 disabled:cursor-not-allowed"
             >
               ✕
             </button>
@@ -192,23 +215,45 @@ export default function TenderModal({ grandTotal, onConfirm, onCancel, confirmin
           )}
         </div>
 
+        {/* Card terminal status */}
+        {terminalStatus && (
+          <div className="px-6 pb-2">
+            {terminalStatus.phase === "waiting" ? (
+              <div className="flex items-center gap-3 rounded-xl bg-blue-950/50 border border-blue-800/60 px-4 py-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-400 shrink-0" />
+                <p className="text-sm text-blue-200">{terminalStatus.message}</p>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3 rounded-xl bg-red-950/50 border border-red-800/60 px-4 py-3">
+                <span className="text-lg shrink-0">⚠️</span>
+                <p className="text-sm text-red-300">{terminalStatus.message}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Confirm Button */}
-        <div className="p-6 pt-0">
+        <div className="p-6 pt-2">
           <button
             onClick={() => {
               // Guard against a double-click landing before `confirming`
-              // propagates back as a prop on the next render.
-              if (confirming || !canConfirm) return;
+              // propagates back as a prop on the next render. While the
+              // card terminal is waiting, the button is disabled too.
+              if (confirming || terminalWaiting || !canConfirm) return;
               onConfirm(payments);
             }}
-            disabled={!canConfirm || confirming}
+            disabled={!canConfirm || confirming || terminalWaiting}
             className="w-full py-4 rounded-xl font-bold text-lg transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 text-white"
           >
-            {confirming
-              ? "Processing…"
-              : canConfirm
-                ? "✓ Complete Sale"
-                : `${formatNaira(remaining)} remaining`}
+            {terminalWaiting
+              ? "Awaiting card terminal…"
+              : confirming
+                ? "Processing…"
+                : terminalStatus?.phase === "failed"
+                  ? "Retry Payment"
+                  : canConfirm
+                    ? "✓ Complete Sale"
+                    : `${formatNaira(remaining)} remaining`}
           </button>
         </div>
       </div>

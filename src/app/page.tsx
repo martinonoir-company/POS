@@ -12,7 +12,7 @@ import {
   startSyncHeartbeat,
   getTerminalId,
 } from "../lib/sync";
-import { syncTransactions } from "../lib/api";
+import { syncTransactions, posTerminalPayment, reconcilePayment } from "../lib/api";
 import type { PaymentSplit, CompletedSale, PosTransaction } from "../lib/types";
 
 import LoginForm from "../components/login-form";
@@ -57,6 +57,13 @@ export default function POSPage() {
   // before React re-renders; the ref blocks the second call immediately.
   const [confirming, setConfirming] = useState(false);
   const confirmingRef = useRef(false);
+  // Live status of a card payment on the Moniepoint terminal, surfaced in
+  // the tender modal. null = no card payment in progress.
+  const [terminalStatus, setTerminalStatus] = useState<
+    | null
+    | { phase: "waiting"; message: string }
+    | { phase: "failed"; message: string }
+  >(null);
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -141,6 +148,87 @@ export default function POSPage() {
     void posSession.refetch();
   }
 
+  /**
+   * Drive a card payment on the Moniepoint terminal for an order.
+   *
+   * Pushes the card-leg amount to the physical device, then polls the
+   * server (which polls Moniepoint) until the transaction settles.
+   * Resolves true only on a confirmed SUCCEEDED card payment; false on a
+   * failed/cancelled/timed-out attempt — in which case the order stays
+   * PENDING_PAYMENT and the cashier can retry.
+   *
+   * The POS never talks to Moniepoint directly — every call is to our
+   * server.
+   */
+  async function runTerminalPayment(
+    orderId: string,
+    cardAmountMinor: number,
+  ): Promise<boolean> {
+    setTerminalStatus({
+      phase: "waiting",
+      message: "Sending payment to the card terminal…",
+    });
+    let merchantReference: string;
+    try {
+      const pushed = await posTerminalPayment({
+        orderId,
+        amount: cardAmountMinor,
+        terminalCode: getTerminalId(),
+      });
+      merchantReference = pushed.data.merchantReference;
+    } catch (err) {
+      setTerminalStatus({
+        phase: "failed",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Could not start the card payment.",
+      });
+      return false;
+    }
+
+    setTerminalStatus({
+      phase: "waiting",
+      message: "Waiting for the customer to complete payment on the terminal…",
+    });
+
+    // Poll the server for the authoritative outcome. ~2 minutes total
+    // (40 × 3s) — long enough for a customer to tap/insert and enter a PIN.
+    const MAX_ATTEMPTS = 40;
+    const INTERVAL_MS = 3000;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      await new Promise((r) => setTimeout(r, INTERVAL_MS));
+      try {
+        const res = await reconcilePayment(merchantReference);
+        const status = res.data.status;
+        if (status === "SUCCEEDED") {
+          setTerminalStatus(null);
+          return true;
+        }
+        if (status === "FAILED" || status === "CANCELLED") {
+          setTerminalStatus({
+            phase: "failed",
+            message:
+              res.data.failureReason ??
+              "The card payment was declined or cancelled.",
+          });
+          return false;
+        }
+        // PENDING / PROCESSING — keep waiting.
+      } catch {
+        // Transient reconcile error — keep polling; the device may still
+        // be processing.
+      }
+    }
+
+    setTerminalStatus({
+      phase: "failed",
+      message:
+        "Timed out waiting for the card terminal. Check the device, then retry.",
+    });
+    return false;
+  }
+
   /** Payment confirmed from the tender modal — route by source. */
   async function handlePaymentConfirm(payments: PaymentSplit[]) {
     // Re-entry guard: a double-click (or any second invocation while the
@@ -160,23 +248,61 @@ export default function POSPage() {
 
   async function runPaymentConfirm(payments: PaymentSplit[]) {
     if (tenderSource === "session") {
+      const cardLeg = payments.find((p) => p.method === "POS_TERMINAL");
+      if (cardLeg && !online) {
+        setTerminalStatus({
+          phase: "failed",
+          message:
+            "Card payments need an internet connection to reach the terminal. Use cash, or try again when back online.",
+        });
+        return;
+      }
+
       const res = await posSession.confirm(payments, {
         name: cart.customerName || undefined,
         phone: cart.customerPhone || undefined,
       });
-      setShowTender(false);
-      if (res.ok) {
-        setSessionSaleNote(
-          res.orderNumber ? `Order #${res.orderNumber} completed.` : "Sale completed.",
-        );
-        updatePendingCount();
+      if (!res.ok) {
+        // The error is shown in the ScannerBasketPanel; the tender modal
+        // closes and the cashier can retry from the panel.
+        setShowTender(false);
+        return;
       }
-      // On failure the error is shown in the ScannerBasketPanel; the
-      // tender modal closes and the cashier can retry from the panel.
+
+      // Card leg: the session order is PENDING_PAYMENT — charge the
+      // terminal and only treat the sale as complete once it confirms.
+      if (cardLeg && res.orderId) {
+        const approved = await runTerminalPayment(res.orderId, cardLeg.amount);
+        if (!approved) {
+          // Card not approved — keep the tender modal open with the
+          // failure shown so the cashier can retry.
+          return;
+        }
+      }
+
+      setShowTender(false);
+      setTerminalStatus(null);
+      setSessionSaleNote(
+        res.orderNumber ? `Order #${res.orderNumber} completed.` : "Sale completed.",
+      );
+      updatePendingCount();
       return;
     }
 
-    // ── Local walk-up sale (unchanged) ──
+    // ── Local walk-up sale ──
+    const cardLeg = payments.find((p) => p.method === "POS_TERMINAL");
+
+    // A card payment must be approved on the physical terminal, which the
+    // server reaches online. Block a card sale while offline.
+    if (cardLeg && !online) {
+      setTerminalStatus({
+        phase: "failed",
+        message:
+          "Card payments need an internet connection to reach the terminal. Use cash, or try again when back online.",
+      });
+      return;
+    }
+
     const txId = crypto.randomUUID();
     const timestamp = new Date().toISOString();
 
@@ -226,21 +352,59 @@ export default function POSPage() {
           sale.orderNumber = result.successful[0].orderNumber;
           sale.orderId = result.successful[0].orderId;
         } else {
-          // Failed — queue for retry
+          // A card sale cannot be queued offline — without a synced order
+          // there is nothing to charge the terminal against.
+          if (cardLeg) {
+            setTerminalStatus({
+              phase: "failed",
+              message:
+                result.failed[0]?.reason ??
+                "Could not create the order. The card was not charged.",
+            });
+            return;
+          }
+          // Cash-only — safe to queue for retry.
           await queueTransaction(transaction);
         }
-      } catch {
-        // Network error — queue
+      } catch (err) {
+        if (cardLeg) {
+          setTerminalStatus({
+            phase: "failed",
+            message:
+              err instanceof Error
+                ? err.message
+                : "Could not reach the server. The card was not charged.",
+          });
+          return;
+        }
+        // Cash-only — queue for retry.
         await queueTransaction(transaction);
       }
     } else {
-      // Offline — queue
+      // Offline — queue (cash-only; the card guard above already returned).
       await queueTransaction(transaction);
+    }
+
+    // ── Card payment: charge the physical terminal, confirm before done ──
+    // The order exists at PENDING_PAYMENT; pushing the card leg to the
+    // device and getting a SUCCEEDED reconcile is what flips it to PAID.
+    if (cardLeg && sale.orderId) {
+      const approved = await runTerminalPayment(sale.orderId, cardLeg.amount);
+      if (!approved) {
+        // Card declined / cancelled / timed out. The order stays
+        // PENDING_PAYMENT; the cashier can retry from the tender modal,
+        // which shows the failure via `terminalStatus`. Do NOT complete
+        // the sale or clear the cart.
+        return;
+      }
+      // Approved — clear the failure banner if any lingered.
+      setTerminalStatus(null);
     }
 
     sales.addSale(sale);
     setCompletedSale(sale);
     setShowTender(false);
+    setTerminalStatus(null);
     cart.clearCart();
     updatePendingCount();
   }
@@ -434,8 +598,12 @@ export default function POSPage() {
               : cart.grandTotal
           }
           onConfirm={handlePaymentConfirm}
-          onCancel={() => setShowTender(false)}
+          onCancel={() => {
+            setShowTender(false);
+            setTerminalStatus(null);
+          }}
           confirming={confirming}
+          terminalStatus={terminalStatus}
         />
       )}
 

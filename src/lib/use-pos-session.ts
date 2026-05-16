@@ -42,7 +42,7 @@ export interface UsePosSessionResult {
   confirm: (
     payments: PaymentSplit[],
     customer?: { name?: string; phone?: string },
-  ) => Promise<{ ok: boolean; orderNumber?: string }>;
+  ) => Promise<{ ok: boolean; orderNumber?: string; orderId?: string }>;
   /** Void the basket (cashier rejects it). */
   voidSession: (reason?: string) => Promise<boolean>;
 }
@@ -189,7 +189,7 @@ export function usePosSession(
     async (
       payments: PaymentSplit[],
       customer?: { name?: string; phone?: string },
-    ): Promise<{ ok: boolean; orderNumber?: string }> => {
+    ): Promise<{ ok: boolean; orderNumber?: string; orderId?: string }> => {
       const current = session;
       if (!current) {
         setError("No open session to complete.");
@@ -201,7 +201,7 @@ export function usePosSession(
       const attempt = async (
         version: number,
         isRetry: boolean,
-      ): Promise<{ ok: boolean; orderNumber?: string }> => {
+      ): Promise<{ ok: boolean; orderNumber?: string; orderId?: string }> => {
         try {
           const res = await confirmPosSession(terminalCode, {
             version,
@@ -210,7 +210,11 @@ export function usePosSession(
             customerPhone: customer?.phone,
           });
           if (mountedRef.current) setSession(res.data);
-          return { ok: true, orderNumber: res.data.resultOrderNumber ?? undefined };
+          return {
+            ok: true,
+            orderNumber: res.data.resultOrderNumber ?? undefined,
+            orderId: res.data.resultOrderId ?? undefined,
+          };
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Failed to complete sale";
           if (!isRetry && /version|conflict/i.test(msg)) {

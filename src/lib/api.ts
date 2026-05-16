@@ -357,3 +357,42 @@ export async function fetchPayments(
   if (opts.search?.trim()) q.set("search", opts.search.trim());
   return request(`/payments?${q.toString()}`);
 }
+
+/** Result of starting a POS payment (cash leg or terminal push). */
+export interface PosPaymentResult {
+  paymentId: string;
+  merchantReference: string;
+  status: "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "REFUNDED";
+  amount: number;
+  failureReason?: string | null;
+}
+
+/**
+ * Push a card payment to the Moniepoint terminal paired with this POS
+ * terminal. Returns once the transaction is on the device (PROCESSING);
+ * poll `reconcilePayment` until it settles SUCCEEDED or FAILED.
+ * `amount` is in minor units (kobo).
+ */
+export async function posTerminalPayment(input: {
+  orderId: string;
+  amount: number;
+  terminalCode: string;
+}): Promise<{ data: PosPaymentResult }> {
+  return request("/payments/pos/terminal", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Reconcile a payment with its provider and return the current status.
+ * Server-mediated — the POS never calls Moniepoint directly. Safe to
+ * call repeatedly while polling a terminal payment.
+ */
+export async function reconcilePayment(
+  merchantReference: string,
+): Promise<{ data: PosPaymentResult }> {
+  return request(`/payments/reconcile/${encodeURIComponent(merchantReference)}`, {
+    method: "POST",
+  });
+}
