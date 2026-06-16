@@ -1,6 +1,7 @@
 "use client";
 import type { CompletedSale } from "../lib/types";
 import { formatNaira } from "../lib/money";
+import OrderBarcode from "./order-barcode";
 
 interface Props {
   sale: CompletedSale;
@@ -99,6 +100,13 @@ export default function ReceiptView({ sale, onNewSale, onPrintInvoice }: Props) 
             <div className="border-t border-zinc-800 pt-3 text-sm text-zinc-400">
               Customer: {sale.customerName}
               {sale.customerPhone && ` (${sale.customerPhone})`}
+            </div>
+          )}
+
+          {/* Order-number barcode — readable by the returns scanner. */}
+          {sale.synced && sale.orderNumber && (
+            <div className="border-t border-zinc-800 pt-3 flex justify-center bg-white rounded-md mt-2 py-3">
+              <OrderBarcode value={sale.orderNumber} width={240} />
             </div>
           )}
 
