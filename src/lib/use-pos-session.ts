@@ -41,7 +41,7 @@ export interface UsePosSessionResult {
   /** Complete the sale with the given payment split. */
   confirm: (
     payments: PaymentSplit[],
-    customer?: { name?: string; phone?: string },
+    customer?: { name?: string; phone?: string; agentCode?: string },
   ) => Promise<{ ok: boolean; orderNumber?: string; orderId?: string }>;
   /** Void the basket (cashier rejects it). */
   voidSession: (reason?: string) => Promise<boolean>;
@@ -188,7 +188,7 @@ export function usePosSession(
   const confirm = useCallback(
     async (
       payments: PaymentSplit[],
-      customer?: { name?: string; phone?: string },
+      customer?: { name?: string; phone?: string; agentCode?: string },
     ): Promise<{ ok: boolean; orderNumber?: string; orderId?: string }> => {
       const current = session;
       if (!current) {
@@ -208,6 +208,7 @@ export function usePosSession(
             payments,
             customerName: customer?.name,
             customerPhone: customer?.phone,
+            agentCode: customer?.agentCode,
           });
           if (mountedRef.current) setSession(res.data);
           return {

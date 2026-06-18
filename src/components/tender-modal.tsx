@@ -11,12 +11,16 @@ export type TerminalStatus =
 
 interface Props {
   grandTotal: number;
-  onConfirm: (payments: PaymentSplit[]) => void;
+  onConfirm: (payments: PaymentSplit[], agentCode?: string) => void;
   onCancel: () => void;
   /** True while the sale is being submitted — disables Complete Sale. */
   confirming?: boolean;
   /** Card-terminal payment status, when a card leg is being charged. */
   terminalStatus?: TerminalStatus;
+  /** Validate an agent code against the server before submit. */
+  onValidateAgentCode: (
+    code: string,
+  ) => Promise<{ ok: true; agentName: string } | { ok: false; error: string }>;
 }
 
 type Method = "CASH" | "POS_TERMINAL" | "BANK_TRANSFER";
@@ -33,10 +37,49 @@ export default function TenderModal({
   onCancel,
   confirming = false,
   terminalStatus = null,
+  onValidateAgentCode,
 }: Props) {
   const [payments, setPayments] = useState<PaymentSplit[]>([]);
   const [activeMethod, setActiveMethod] = useState<Method | null>(null);
   const [amountInput, setAmountInput] = useState("");
+
+  // Marketing-agent referral code. Optional. The cashier types the code
+  // they received from the customer; we validate it before letting the
+  // sale complete so a typo doesn't sit on the order silently.
+  const [agentCodeInput, setAgentCodeInput] = useState("");
+  const [agentVerifying, setAgentVerifying] = useState(false);
+  const [agentVerified, setAgentVerified] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
+
+  const verifyAgent = useCallback(async () => {
+    const code = agentCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setAgentVerifying(true);
+    setAgentError(null);
+    try {
+      const res = await onValidateAgentCode(code);
+      if (res.ok) {
+        setAgentVerified({ code, name: res.agentName });
+      } else {
+        setAgentError(res.error);
+        setAgentVerified(null);
+      }
+    } catch (e) {
+      setAgentError(e instanceof Error ? e.message : "Could not verify code");
+      setAgentVerified(null);
+    } finally {
+      setAgentVerifying(false);
+    }
+  }, [agentCodeInput, onValidateAgentCode]);
+
+  const clearAgent = useCallback(() => {
+    setAgentVerified(null);
+    setAgentError(null);
+    setAgentCodeInput("");
+  }, []);
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remaining = Math.max(0, grandTotal - totalPaid);
@@ -215,6 +258,59 @@ export default function TenderModal({
           )}
         </div>
 
+        {/* Marketing-agent referral code (optional) */}
+        <div className="px-6 pb-2">
+          <div className="rounded-xl bg-zinc-800/60 border border-zinc-700/60 px-4 py-3">
+            <p className="text-zinc-400 text-xs mb-2">
+              Marketing agent code (optional)
+            </p>
+            {agentVerified ? (
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm text-emerald-300 font-mono truncate">
+                    ✓ {agentVerified.code}
+                  </p>
+                  <p className="text-xs text-zinc-400 truncate">
+                    {agentVerified.name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearAgent}
+                  className="text-xs text-zinc-500 hover:text-red-400 underline"
+                >
+                  Clear
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={agentCodeInput}
+                  onChange={(e) =>
+                    setAgentCodeInput(e.target.value.toUpperCase())
+                  }
+                  onKeyDown={(e) => e.key === "Enter" && verifyAgent()}
+                  placeholder="e.g. ABC-XY12"
+                  maxLength={16}
+                  className="flex-1 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm font-mono uppercase placeholder:text-zinc-600 placeholder:font-sans focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={verifyAgent}
+                  disabled={!agentCodeInput.trim() || agentVerifying}
+                  className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium rounded-lg disabled:opacity-40"
+                >
+                  {agentVerifying ? "…" : "Verify"}
+                </button>
+              </div>
+            )}
+            {agentError && !agentVerified && (
+              <p className="text-xs text-red-400 mt-2">⚠ {agentError}</p>
+            )}
+          </div>
+        </div>
+
         {/* Card terminal status */}
         {terminalStatus && (
           <div className="px-6 pb-2">
@@ -240,7 +336,7 @@ export default function TenderModal({
               // propagates back as a prop on the next render. While the
               // card terminal is waiting, the button is disabled too.
               if (confirming || terminalWaiting || !canConfirm) return;
-              onConfirm(payments);
+              onConfirm(payments, agentVerified?.code);
             }}
             disabled={!canConfirm || confirming || terminalWaiting}
             className="w-full py-4 rounded-xl font-bold text-lg transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 text-white"

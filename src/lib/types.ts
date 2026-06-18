@@ -87,6 +87,8 @@ export interface PosTransaction {
   discountAppliedAt?: string;
   customerName?: string;
   customerPhone?: string;
+  /** Marketing-agent referral code entered at the till (optional). */
+  agentCode?: string;
 }
 
 export interface CompletedSale {

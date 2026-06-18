@@ -141,6 +141,7 @@ export async function confirmPosSession(
     payments: PaymentSplit[];
     customerName?: string;
     customerPhone?: string;
+    agentCode?: string;
   },
 ): Promise<{ data: PosSession }> {
   return request(`/pos-sessions/${encodeURIComponent(terminalCode)}/confirm`, {
@@ -356,6 +357,32 @@ export async function fetchPayments(
   if (opts.status) q.set("status", opts.status);
   if (opts.search?.trim()) q.set("search", opts.search.trim());
   return request(`/payments?${q.toString()}`);
+}
+
+// ── Marketing agents ──
+
+/**
+ * Validate a marketing-agent code at the till. Server returns the agent
+ * name for cashier confirmation. Throws on a 4xx, so callers should
+ * catch and surface res.error to the UI.
+ */
+export async function validateAgentCode(
+  code: string,
+): Promise<{ ok: true; agentName: string } | { ok: false; error: string }> {
+  try {
+    const res = await request<{
+      data: { agentId: string; code: string; agentName: string };
+    }>("/agents/validate-code", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+    return { ok: true, agentName: res.data.agentName };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Could not verify code",
+    };
+  }
 }
 
 /** Result of starting a POS payment (cash leg or terminal push). */

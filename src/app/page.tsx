@@ -12,7 +12,12 @@ import {
   startSyncHeartbeat,
   getTerminalId,
 } from "../lib/sync";
-import { syncTransactions, posTerminalPayment, reconcilePayment } from "../lib/api";
+import {
+  syncTransactions,
+  posTerminalPayment,
+  reconcilePayment,
+  validateAgentCode,
+} from "../lib/api";
 import type { PaymentSplit, CompletedSale, PosTransaction } from "../lib/types";
 
 import LoginForm from "../components/login-form";
@@ -230,7 +235,10 @@ export default function POSPage() {
   }
 
   /** Payment confirmed from the tender modal — route by source. */
-  async function handlePaymentConfirm(payments: PaymentSplit[]) {
+  async function handlePaymentConfirm(
+    payments: PaymentSplit[],
+    agentCode?: string,
+  ) {
     // Re-entry guard: a double-click (or any second invocation while the
     // first is still in flight) is dropped. Without this, the walk-up path
     // below mints a fresh transactionId per call, so each click produced a
@@ -239,14 +247,17 @@ export default function POSPage() {
     confirmingRef.current = true;
     setConfirming(true);
     try {
-      await runPaymentConfirm(payments);
+      await runPaymentConfirm(payments, agentCode);
     } finally {
       confirmingRef.current = false;
       setConfirming(false);
     }
   }
 
-  async function runPaymentConfirm(payments: PaymentSplit[]) {
+  async function runPaymentConfirm(
+    payments: PaymentSplit[],
+    agentCode?: string,
+  ) {
     if (tenderSource === "session") {
       const cardLeg = payments.find((p) => p.method === "POS_TERMINAL");
       if (cardLeg && !online) {
@@ -261,6 +272,7 @@ export default function POSPage() {
       const res = await posSession.confirm(payments, {
         name: cart.customerName || undefined,
         phone: cart.customerPhone || undefined,
+        agentCode,
       });
       if (!res.ok) {
         // The error is shown in the ScannerBasketPanel; the tender modal
@@ -325,6 +337,7 @@ export default function POSPage() {
       discountAppliedAt: cart.discountAppliedAt || undefined,
       customerName: cart.customerName || undefined,
       customerPhone: cart.customerPhone || undefined,
+      agentCode,
     };
 
     const sale: CompletedSale = {
@@ -604,6 +617,7 @@ export default function POSPage() {
           }}
           confirming={confirming}
           terminalStatus={terminalStatus}
+          onValidateAgentCode={validateAgentCode}
         />
       )}
 
