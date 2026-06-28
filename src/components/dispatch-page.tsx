@@ -7,6 +7,7 @@ import {
 } from "../lib/api";
 import { formatMoney } from "../lib/money";
 import OrderBarcode from "./order-barcode";
+import ShippingLabel from "./shipping-label";
 
 const STATUS_FILTERS: { label: string; value: string }[] = [
   { label: "All", value: "" },
@@ -241,6 +242,7 @@ function DispatchDetailModal({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLabel, setShowLabel] = useState(false);
   const addr = order.shippingAddress;
   const done = order.dispatchStatus === "DISPATCHED";
 
@@ -335,10 +337,23 @@ function DispatchDetailModal({
             {busy ? "Marking…" : "Mark as dispatched"}
           </button>
         )}
+
+        {/* Print shipping label — like the invoice print on a completed sale */}
+        <button
+          onClick={() => setShowLabel(true)}
+          className="mt-2 w-full py-3 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-100 font-semibold text-sm hover:bg-zinc-700"
+        >
+          🖨️ Print shipping label
+        </button>
+
         <p className="mt-2 text-center text-[11px] text-zinc-600">
           Or scan the order barcode to mark it dispatched.
         </p>
       </div>
+
+      {showLabel && (
+        <ShippingLabel order={order} onClose={() => setShowLabel(false)} />
+      )}
     </div>
   );
 }
