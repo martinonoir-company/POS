@@ -38,6 +38,10 @@ import CustomersPage from "../components/customers-page";
 import ProductsPage from "../components/products-page";
 import InventoryPage from "../components/inventory-page";
 import ScannerBasketPanel from "../components/scanner-basket-panel";
+import DispatchPage from "../components/dispatch-page";
+import DispatchAlertModal from "../components/dispatch-alert-modal";
+import { useDispatchAlerts } from "../lib/use-dispatch-alerts";
+import { primeAudio } from "../lib/sound-player";
 
 export default function POSPage() {
   const auth = useAuth();
@@ -51,6 +55,8 @@ export default function POSPage() {
     auth.getToken,
     auth.isAuthenticated,
   );
+  // Live dispatch alerts (new paid shipping orders) over websocket.
+  const dispatchAlerts = useDispatchAlerts(auth.getToken, auth.isAuthenticated);
 
   const [activeTab, setActiveTab] = useState<TabId>("pos");
   const [showTender, setShowTender] = useState(false);
@@ -81,6 +87,15 @@ export default function POSPage() {
       configureApi(auth.getToken, auth.refresh, auth.logout);
     }
   }, [auth.isAuthenticated, auth.getToken, auth.refresh, auth.logout]);
+
+  // Prime the audio context on the first user interaction so the dispatch
+  // chime is allowed to play later (browsers block autoplay until a gesture).
+  useEffect(() => {
+    if (!auth.isAuthenticated) return;
+    const onGesture = () => primeAudio();
+    window.addEventListener("pointerdown", onGesture, { once: true });
+    return () => window.removeEventListener("pointerdown", onGesture);
+  }, [auth.isAuthenticated]);
 
   // Sync heartbeat
   useEffect(() => {
@@ -545,6 +560,12 @@ export default function POSPage() {
           </div>
         )}
 
+        {activeTab === "dispatch" && (
+          <div className="p-6 max-w-5xl mx-auto h-[calc(100vh-56px)] overflow-hidden flex flex-col">
+            <DispatchPage />
+          </div>
+        )}
+
         {activeTab === "sales" && (
           <div className="p-6 max-w-5xl mx-auto h-[calc(100vh-56px)] overflow-hidden flex flex-col">
             <SalesHistory />
@@ -633,6 +654,19 @@ export default function POSPage() {
         <InvoicePrint
           sale={completedSale}
           onClose={() => setShowInvoice(false)}
+        />
+      )}
+
+      {/* New-order dispatch alert (websocket-driven, with sound) */}
+      {dispatchAlerts.current && (
+        <DispatchAlertModal
+          alert={dispatchAlerts.current}
+          pending={dispatchAlerts.pending}
+          onClose={dispatchAlerts.dismiss}
+          onViewDetails={() => {
+            setActiveTab("dispatch");
+            dispatchAlerts.dismiss();
+          }}
         />
       )}
     </div>

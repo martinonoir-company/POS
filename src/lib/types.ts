@@ -127,6 +127,8 @@ export interface QuoteResult {
   discountTotal: number;
   grandTotal: number;
   coupon?: { code: string; discountType: string; discountAmount: number };
+  /** Server-attached variant-scoped promotion. Customer never typed this. */
+  autoApply?: { code: string; discountType: string; discountAmount: number };
 }
 
 export interface AdminUser {

@@ -2,7 +2,7 @@
 import { useOnline } from "../lib/use-online";
 import type { AdminUser } from "../lib/types";
 
-export type TabId = "pos" | "sales" | "reports" | "discounts" | "payments" | "customers" | "products" | "inventory" | "eod";
+export type TabId = "pos" | "dispatch" | "sales" | "reports" | "discounts" | "payments" | "customers" | "products" | "inventory" | "eod";
 
 interface Props {
   user: AdminUser;
@@ -14,6 +14,7 @@ interface Props {
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "pos", label: "POS", icon: "🛒" },
+  { id: "dispatch", label: "Dispatch", icon: "🚚" },
   { id: "sales", label: "Sales", icon: "📋" },
   { id: "reports", label: "Reports", icon: "📊" },
   { id: "discounts", label: "Discounts", icon: "🏷️" },

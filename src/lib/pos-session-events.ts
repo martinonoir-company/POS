@@ -72,6 +72,8 @@ export const PosServerEvent = {
   PAYMENT_INTENT: "session:payment-intent",
   CONFIRMED: "session:confirmed",
   VOIDED: "session:voided",
+  /** A new paid order that needs branch dispatch (storefront/mobile). */
+  DISPATCH_NEW: "dispatch:new",
 } as const;
 export type PosServerEvent =
   (typeof PosServerEvent)[keyof typeof PosServerEvent];
@@ -115,4 +117,18 @@ export interface SessionVoidedPayload {
   terminalCode: string;
   version: number;
   reason?: string;
+}
+
+/** Payload for the dispatch:new alert pushed to all POS terminals. */
+export interface DispatchNewPayload {
+  orderId: string;
+  orderNumber: string;
+  channel: string;
+  currency: string;
+  grandTotal: number;
+  itemCount: number;
+  customerName: string;
+  city?: string;
+  state?: string;
+  createdAt: string;
 }

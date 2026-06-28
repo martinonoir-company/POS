@@ -237,6 +237,10 @@ export interface OrderSummary {
   customerNote?: string | null;
   staffNote?: string | null;
   paidAt?: string | null;
+  isWholesale?: boolean;
+  dispatchStatus?: "PENDING" | "DISPATCHED" | null;
+  dispatchedAt?: string | null;
+  shippingOptOut?: boolean;
   statusHistory?: { fromStatus: string; toStatus: string; createdAt: string; reason?: string }[];
 }
 
@@ -258,6 +262,36 @@ export async function fetchOrders(params: OrderQueryParams = {}): Promise<{
 
 export async function fetchOrderById(id: string): Promise<{ data: OrderSummary }> {
   return request(`/orders/${id}`);
+}
+
+// ── Dispatch ──
+
+/** Paginated dispatch queue: shipping orders awaiting/handed to the courier. */
+export async function fetchDispatchQueue(params: {
+  page?: number;
+  limit?: number;
+  dispatchStatus?: string;
+  search?: string;
+} = {}): Promise<{
+  data: { items: OrderSummary[]; total: number; page: number; limit: number; pages: number };
+}> {
+  const q = new URLSearchParams();
+  q.set("page", String(params.page ?? 1));
+  q.set("limit", String(params.limit ?? 15));
+  if (params.dispatchStatus) q.set("dispatchStatus", params.dispatchStatus);
+  if (params.search?.trim()) q.set("search", params.search.trim());
+  return request(`/orders/dispatch-queue?${q.toString()}`);
+}
+
+/** Mark an order DISPATCHED by scanning its barcode (order number or id). */
+export async function markOrderDispatched(
+  ref: string,
+  note?: string,
+): Promise<{ data: OrderSummary }> {
+  return request(`/orders/dispatch-scan/${encodeURIComponent(ref)}`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
 }
 
 // ── POS Pages API ──
