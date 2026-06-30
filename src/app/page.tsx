@@ -58,7 +58,26 @@ export default function POSPage() {
   // Live dispatch alerts (new paid shipping orders) over websocket.
   const dispatchAlerts = useDispatchAlerts(auth.getToken, auth.isAuthenticated);
 
-  const [activeTab, setActiveTab] = useState<TabId>("pos");
+  // Persist the active tab so a sign-out (or reload) returns the staff member
+  // to the view they were on, rather than always resetting to "pos".
+  const [activeTab, setActiveTabState] = useState<TabId>("pos");
+  const setActiveTab = useCallback((tab: TabId) => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem("pos_active_tab", tab);
+    } catch {
+      // localStorage unavailable — degrade to in-memory only.
+    }
+  }, []);
+  // Restore the last tab once on mount.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("pos_active_tab");
+      if (saved) setActiveTabState(saved as TabId);
+    } catch {
+      // ignored
+    }
+  }, []);
   const [showTender, setShowTender] = useState(false);
   /** "local" = walk-up cart rung at the till; "session" = scanner basket. */
   const [tenderSource, setTenderSource] = useState<"local" | "session">("local");
